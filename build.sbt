@@ -15,6 +15,7 @@ libraryDependencies ++= Seq(
   "org.typelevel" %% "cats-core" % "1.1.0",
   "org.typelevel" %% "cats-effect" % "0.10",
   "org.scalactic" %% "scalactic" % "3.0.5",
-  "org.scalatest" %% "scalatest" % "3.0.5" % "test"
+  "org.scalatest" %% "scalatest" % "3.0.5" % "test",
+  "com.lihaoyi" %% "ammonite-ops" % "1.1.2" % "test"
 )
 
