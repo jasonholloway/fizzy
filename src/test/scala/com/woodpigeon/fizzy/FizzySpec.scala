@@ -14,27 +14,36 @@ import cats.instances.string._
 
 
 trait Store {
-  def load[F[_]](name: String): Stream[F, String]
+  def load[F[_]](name: String)(implicit E: Effect[F]): Stream[F, String]
   def save[F[_]](name: String)(implicit E: Effect[F]): Sink[F, String]
 }
 
 
 class FileStore(root: Path) extends Store {
 
-  def load[F[_]](name: String): Stream[F, String] = ???
+  def formPath(name: String): java.nio.file.Path =
+    Paths.get((root / s"$name.ndjson").toString)
+
+  def load[F[_]](name: String)(implicit E: Effect[F]): Stream[F, String] =
+    readAllAsync[F](formPath(name), 256)
+      .through(text.utf8Decode)
+      .through(text.lines)
 
   def save[F[_]](name: String)(implicit E: Effect[F]): Sink[F, String] =
-    _.through(text.utf8Encode)
-      .to(writeAllAsync(Paths.get(root.toString(), s"$name.ndjson")))
+    _.map(l => s"$l\n")
+      .through(text.utf8Encode)
+      .to(writeAllAsync(formPath(name)))
 }
 
 
 class FileStoreSpec extends FlatSpec with Matchers with BeforeAndAfterAll {
 
-  val dataDir = tmp.dir(deleteOnExit = true)
-  println(s"dataDir: $dataDir")
+  import Helpers._
 
+  val dataDir = tmp.dir(deleteOnExit = true)
   val store = new FileStore(dataDir)
+
+  println(s"dataDir: $dataDir")
 
   override def beforeAll() = 
     createLines()
@@ -54,6 +63,17 @@ class FileStoreSpec extends FlatSpec with Matchers with BeforeAndAfterAll {
 
 
 
+  it should "load lines from file" in {
+    write(dataDir / "t.ndjson", createLines().intersperse("\n").sync)
+
+    val r = store.load("t").sync
+    assert(r.length == 10)
+  }
+
+}
+
+
+object Helpers {
 
   def createLines(): Stream[IO, String] =
     Stream.emit("{ \"\"hello!\"\": 13 }").
@@ -63,4 +83,10 @@ class FileStoreSpec extends FlatSpec with Matchers with BeforeAndAfterAll {
     _.evalMap(v => {
       L.liftIO(IO { println(v); v });
     })
+  
+  implicit class StreamHelpers[V](str: Stream[IO, V]) {
+    def sync(): List[V] =
+      str.compile.toList.unsafeRunSync()
+  }
+
 }
