@@ -2,7 +2,7 @@ package com.woodpigeon.Fizzy
 
 import cats.effect.{ IO, Sync }
 import cats.effect.IO._
-import fs2.{ Pipe, Sink, text }
+import fs2.{ Pipe, Pure, Sink, text }
 import java.nio.file.Paths
 import scala.concurrent.ExecutionContext.Implicits.global
 import org.scalatest._
@@ -28,6 +28,7 @@ class FileStore(root: Path) extends Store {
     readAllAsync[F](formPath(name), 256)
       .through(text.utf8Decode)
       .through(text.lines)
+      .filter(l => !l.isEmpty())
 
   def save[F[_]](name: String)(implicit E: Effect[F]): Sink[F, String] =
     _.map(l => s"$l\n")
@@ -62,13 +63,27 @@ class FileStoreSpec extends FlatSpec with Matchers with BeforeAndAfterAll {
   }
 
 
-
   it should "load lines from file" in {
     write(dataDir / "t.ndjson", createLines().intersperse("\n").sync)
 
     val r = store.load("t").sync
     assert(r.length == 10)
   }
+
+
+  it should "happily roundtrip" in {
+    val lines = createLines().sync
+
+    Stream.emits(lines)
+      .evalMap(l => IO { l })
+      .to(store.save("flumpt"))
+      .run.unsafeRunSync()
+
+    val r = store.load("flumpt").sync
+
+    r should contain theSameElementsInOrderAs lines
+  }
+
 
 }
 
@@ -85,7 +100,7 @@ object Helpers {
     })
   
   implicit class StreamHelpers[V](str: Stream[IO, V]) {
-    def sync(): List[V] =
+    def sync(): Seq[V] =
       str.compile.toList.unsafeRunSync()
   }
 
